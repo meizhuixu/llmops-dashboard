@@ -26,22 +26,43 @@ class LangfuseClient:
             secret_key=secret_key or settings.langfuse_secret_key,
         )
 
-    def send(self, record: SpanRecord) -> None:
-        """Ship a SpanRecord to Langfuse as a trace with one generation span."""
+    def send(self, record: SpanRecord, owns_trace: bool = True) -> None:
+        """Ship a SpanRecord to Langfuse.
+
+        When ``owns_trace`` is True (default), creates a new Langfuse trace and
+        nests one generation span under it — the standard single-call pattern.
+
+        When ``owns_trace`` is False, attaches the generation to an existing
+        trace identified by ``record.trace_id`` without emitting any trace-level
+        payload. This is the multi-agent pattern: the caller (e.g. a LangGraph
+        entry point) owns the parent trace and its name/tags/metadata, and each
+        sub-agent's LLMTracer only contributes a generation. Avoids overwriting
+        parent trace fields via last-write-wins.
+        """
         try:
-            trace = self._langfuse.trace(
-                id=record.trace_id,
-                name=f"{record.project}/{record.component}",
-                metadata=record.metadata,
-                tags=_flatten_tags(record),
-            )
-            trace.generation(
-                id=record.span_id,
-                name=record.component,
-                model=record.model,
-                usage=_build_usage(record),
-                metadata={"latency_ms": record.latency_ms, **record.metadata},
-            )
+            if owns_trace:
+                trace = self._langfuse.trace(
+                    id=record.trace_id,
+                    name=f"{record.project}/{record.component}",
+                    metadata=record.metadata,
+                    tags=_flatten_tags(record),
+                )
+                trace.generation(
+                    id=record.span_id,
+                    name=record.component,
+                    model=record.model,
+                    usage=_build_usage(record),
+                    metadata={"latency_ms": record.latency_ms, **record.metadata},
+                )
+            else:
+                self._langfuse.generation(
+                    trace_id=record.trace_id,
+                    id=record.span_id,
+                    name=record.component,
+                    model=record.model,
+                    usage=_build_usage(record),
+                    metadata={"latency_ms": record.latency_ms, **record.metadata},
+                )
             self._langfuse.flush()
             logger.debug("SpanRecord sent to Langfuse: trace_id=%s", record.trace_id)
         except Exception:
