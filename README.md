@@ -120,6 +120,29 @@ with LLMTracer(project="my-project", component="my-agent", model="claude-sonnet-
 
 ---
 
+## Version Compatibility Notes
+
+| Component | Version | Why |
+|-----------|---------|-----|
+| Langfuse Server | `langfuse/langfuse:2` | v3 requires ClickHouse, which adds significant setup complexity for local dev |
+| Langfuse Python SDK | `>=2.0.0,<3.0.0` | v4 SDK switched to OpenTelemetry/OTLP transport, incompatible with Server v2 REST API |
+
+**This version pin is a deliberate trade-off**, not an oversight:
+
+- **Langfuse v3 / SDK v4** introduced an OpenTelemetry-based architecture where the Python SDK exports via OTLP. This requires the server to have an OTLP endpoint (`/api/public/otel`), which only exists in Server v3+.
+- **Server v3** requires ClickHouse in addition to Postgres, which turns a 2-container local setup into a 4+ container setup. The added complexity is not justified for Phase 1.
+- **Trace ID format**: Even with the v2 SDK, trace IDs are generated as 32-character lowercase hex strings (`os.urandom(16).hex()`) — the OTel-compatible format. This makes future migration to the v3 stack drop-in compatible with no trace ID changes.
+
+**Future migration path (tracked as Phase 4+ work)**:
+1. Upgrade `infra/docker-compose.langfuse.yml` to add ClickHouse and Redis
+2. Update server image to `langfuse/langfuse:latest`
+3. Bump SDK constraint to `langfuse>=4.0.0`
+4. Remove `<3.0.0` pin from `pyproject.toml`
+
+No changes needed to `LLMTracer` or `SpanRecord` — the trace IDs and schema are already OTel-compatible.
+
+---
+
 ## Story: From Rankai.ai to Here
 
 At **Rankai.ai**, I built the company's log alerting system — a rule-based pipeline that monitored

@@ -92,3 +92,53 @@ def test_model_validate_roundtrip() -> None:
     original = SpanRecord.model_validate(_minimal())
     roundtripped = SpanRecord.model_validate(original.model_dump())
     assert original == roundtripped
+
+
+# --- Cost breakdown tests ---
+
+
+def test_breakdown_auto_sums_to_total() -> None:
+    data = {
+        **_minimal(),
+        "cost_usd": 0.0,  # omit / default — validator should fill it in
+        "input_cost_usd": 0.003,
+        "output_cost_usd": 0.012,
+    }
+    record = SpanRecord.model_validate(data)
+    assert record.input_cost_usd == pytest.approx(0.003)
+    assert record.output_cost_usd == pytest.approx(0.012)
+    assert record.cost_usd == pytest.approx(0.015)
+
+
+def test_breakdown_inconsistent_with_total_raises() -> None:
+    data = {
+        **_minimal(),
+        "cost_usd": 0.020,  # doesn't equal 0.003 + 0.012 = 0.015
+        "input_cost_usd": 0.003,
+        "output_cost_usd": 0.012,
+    }
+    with pytest.raises(ValidationError, match="cost_usd"):
+        SpanRecord.model_validate(data)
+
+
+def test_legacy_cost_only_still_works() -> None:
+    data = {**_minimal(), "cost_usd": 0.007}
+    record = SpanRecord.model_validate(data)
+    assert record.cost_usd == pytest.approx(0.007)
+    assert record.input_cost_usd is None
+    assert record.output_cost_usd is None
+
+
+def test_set_cost_emits_deprecation_warning() -> None:
+    import warnings
+
+    from llmops_dashboard.instrumentation.tracer import LLMTracer
+
+    tracer = LLMTracer(project="p", component="c", model="m")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        tracer.set_cost(0.005)
+
+    assert len(caught) == 1
+    assert issubclass(caught[0].category, DeprecationWarning)
+    assert "set_cost_breakdown" in str(caught[0].message)

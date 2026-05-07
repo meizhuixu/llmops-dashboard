@@ -107,25 +107,100 @@ Alert triggering logic is Phase 3 — your rule is ready to activate when that s
 
 ---
 
+## Cost Reporting
+
+There are three ways to report cost, in order of preference:
+
+### Option A — (Recommended) Let Langfuse auto-compute from Model Pricing table
+
+Don't call any cost method. Langfuse will compute cost from its built-in model pricing table
+if the model name matches exactly.
+
+```python
+with LLMTracer(project="my-project", component="my-agent", model="claude-sonnet-4-6") as t:
+    response = anthropic_client.messages.create(
+        model="claude-sonnet-4-6",
+        messages=[{"role": "user", "content": prompt}],
+    )
+    t.set_tokens(
+        prompt=response.usage.input_tokens,
+        completion=response.usage.output_tokens,
+    )
+    # No set_cost* call → Langfuse auto-computes
+```
+
+**Prerequisite**: configure the model in Langfuse UI. See "First-time Model Pricing Setup" below.
+
+### Option B — set_cost_breakdown(input_usd, output_usd)
+
+Pass your own pricing. Langfuse shows separate **input cost** and **output cost** columns.
+
+```python
+with LLMTracer(...) as t:
+    response = client.messages.create(...)
+    t.set_tokens(prompt=response.usage.input_tokens, completion=response.usage.output_tokens)
+    t.set_cost_breakdown(
+        input_usd=response.usage.input_tokens * 15.0 / 1_000_000,   # $15/M for opus
+        output_usd=response.usage.output_tokens * 75.0 / 1_000_000, # $75/M for opus
+    )
+```
+
+### Option C — set_cost(total_usd) — Deprecated
+
+For backward compatibility only. Shows a single total cost; no input/output split in UI.
+A `DeprecationWarning` is emitted at runtime.
+
+```python
+t.set_cost(0.015)  # DeprecationWarning: use set_cost_breakdown or omit
+```
+
+---
+
+## First-time Model Pricing Setup (Langfuse UI)
+
+To enable auto-computed costs (Option A), add your models to Langfuse:
+
+1. Open http://localhost:3000 → **Settings** → **Models**
+2. Click **+ Add model**
+3. Add each model used by your project:
+
+| Model name (exact) | Input price (per 1M tokens) | Output price (per 1M tokens) |
+|--------------------|---------------------------|------------------------------|
+| `claude-opus-4-7` | $15.00 | $75.00 |
+| `claude-sonnet-4-6` | $3.00 | $15.00 |
+| `gpt-4o` | $2.50 | $10.00 |
+| `gemini-1.5-pro` | $3.50 | $10.50 |
+
+> **Model name must match exactly** what you pass to `LLMTracer(model=...)`.
+
+4. Click **Save** for each entry.
+
+After adding, re-run `examples/dummy_traced_app.py` — Trace 2 (devdocs-rag) should now show
+a non-zero cost in the Langfuse UI even though no cost was passed by the application.
+
+---
+
 ## Schema Reference
 
 All traces follow `SpanRecord` (defined in `src/llmops_dashboard/instrumentation/schema.py`):
 
-| Field | Type | Required | Example |
-|-------|------|----------|---------|
-| `trace_id` | `str` | auto-generated | `"550e8400-e29b-41d4-a716-..."` |
-| `span_id` | `str` | auto-generated | `"f47ac10b-58cc-4372-a567-..."` |
-| `project` | `str` | yes | `"auto-sentinel"` |
-| `component` | `str` | yes | `"diagnosis-agent"` |
-| `model` | `str` | yes | `"claude-opus-4-7"` |
-| `prompt_tokens` | `int` | yes (via `set_tokens`) | `450` |
-| `completion_tokens` | `int` | yes (via `set_tokens`) | `212` |
+| Field | Type | Default | Example |
+|-------|------|---------|---------|
+| `trace_id` | `str` | auto-generated | `"a3f1...bc04"` (32-char hex) |
+| `span_id` | `str` | auto-generated | `"1d2e...9f0a"` (16-char hex) |
+| `project` | `str` | required | `"auto-sentinel"` |
+| `component` | `str` | required | `"diagnosis-agent"` |
+| `model` | `str` | required | `"claude-opus-4-7"` |
+| `prompt_tokens` | `int` | required | `450` |
+| `completion_tokens` | `int` | required | `212` |
 | `latency_ms` | `int` | auto-computed | `1847` |
-| `cost_usd` | `float` | yes (via `set_cost`) | `0.0089` |
-| `tags` | `dict[str, str]` | no | `{"env": "prod"}` |
-| `metadata` | `dict[str, Any]` | no | `{"pr_number": "42"}` |
+| `cost_usd` | `float` | `0.0` | `0.0089` |
+| `input_cost_usd` | `float \| None` | `None` | `0.0015` |
+| `output_cost_usd` | `float \| None` | `None` | `0.0074` |
+| `tags` | `dict[str, str]` | `{}` | `{"env": "prod"}` |
+| `metadata` | `dict[str, Any]` | `{}` | `{"pr_number": "42"}` |
 
-> **If validation fails**: ensure you call `t.set_tokens()` and `t.set_cost()` inside the `with` block.
+> **If validation fails**: ensure `t.set_tokens()` is called inside the `with` block.
 
 ## Versioning Policy
 
@@ -141,6 +216,6 @@ See [schema_versioning.md](schema_versioning.md) for the full schema evolution p
 - [ ] `.env` has `LANGFUSE_HOST`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`
 - [ ] At least one `LLMTracer` wraps an LLM call
 - [ ] `t.set_tokens()` called inside the `with` block
-- [ ] `t.set_cost()` called inside the `with` block
+- [ ] Cost method called (or model pricing configured in Langfuse UI for auto-compute)
 - [ ] Trace visible in Langfuse UI (filter by `project:your-project`)
 - [ ] (Optional) Alert rule added to `rules.yaml` with a test

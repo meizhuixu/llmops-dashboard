@@ -1,44 +1,13 @@
 # Langfuse v2 — only requires Postgres (no ClickHouse).
 # v3 requires ClickHouse; stick with v2 for local dev simplicity.
 #
-# Seeds a default project + API key pair on first start:
-#   Public key:  pk-lf-local-dev-public-key
-#   Secret key:  sk-lf-local-dev-secret-key
-# Copy these to your .env after running `docker compose up -d`.
+# Default credentials (seeded on fresh volume):
+#   UI login:   admin@example.com / password123
+#   Public key: pk-lf-local-dev-public-key
+#   Secret key: sk-lf-local-dev-secret-key
+#
+# To reset everything:  docker compose down -v && docker compose up -d
 services:
-  langfuse:
-    image: langfuse/langfuse:2
-    container_name: langfuse
-    depends_on:
-      postgres:
-        condition: service_healthy
-    ports:
-      - "3000:3000"
-    environment:
-      DATABASE_URL: postgresql://langfuse:langfuse@postgres:5432/langfuse
-      NEXTAUTH_SECRET: local-dev-secret-change-in-prod
-      SALT: local-dev-salt-change-in-prod
-      NEXTAUTH_URL: http://localhost:3000
-      TELEMETRY_ENABLED: "false"
-      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
-      # Seed a default org / project / API key on first boot
-      LANGFUSE_INIT_ORG_ID: "local-org"
-      LANGFUSE_INIT_ORG_NAME: "Local Dev Org"
-      LANGFUSE_INIT_PROJECT_ID: "local-project"
-      LANGFUSE_INIT_PROJECT_NAME: "LLMOps Dashboard"
-      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: "pk-lf-local-dev-public-key"
-      LANGFUSE_INIT_PROJECT_SECRET_KEY: "sk-lf-local-dev-secret-key"
-      LANGFUSE_INIT_USER_EMAIL: "admin@example.com"
-      LANGFUSE_INIT_USER_NAME: "Admin"
-      LANGFUSE_INIT_USER_PASSWORD: "password123"
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/public/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
-
   postgres:
     image: postgres:16-alpine
     container_name: langfuse-postgres
@@ -56,6 +25,70 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  langfuse:
+    image: langfuse/langfuse:2
+    container_name: langfuse
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://langfuse:langfuse@postgres:5432/langfuse
+      NEXTAUTH_SECRET: local-dev-secret-change-in-prod
+      SALT: local-dev-salt-change-in-prod
+      NEXTAUTH_URL: http://localhost:3000
+      TELEMETRY_ENABLED: "false"
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
+      # Seed org / project / API keys on first boot
+      LANGFUSE_INIT_ORG_ID: "local-org"
+      LANGFUSE_INIT_ORG_NAME: "Local Dev Org"
+      LANGFUSE_INIT_PROJECT_ID: "local-project"
+      LANGFUSE_INIT_PROJECT_NAME: "LLMOps Dashboard"
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: "pk-lf-local-dev-public-key"
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: "sk-lf-local-dev-secret-key"
+      LANGFUSE_INIT_USER_EMAIL: "admin@example.com"
+      LANGFUSE_INIT_USER_NAME: "Admin"
+      LANGFUSE_INIT_USER_PASSWORD: "password123"
+    restart: unless-stopped
+
+  # One-shot service: waits for Langfuse to accept requests, then patches the
+  # project_memberships gap that LANGFUSE_INIT_* doesn't fill in v2.95.
+  # Safe to run multiple times (ON CONFLICT DO NOTHING).
+  langfuse-setup:
+    image: postgres:16-alpine
+    container_name: langfuse-setup
+    depends_on:
+      - langfuse
+    environment:
+      PGPASSWORD: langfuse
+    command: >
+      sh -c "
+        echo 'Waiting for Langfuse to accept connections...';
+        until wget -q --spider http://langfuse:3000/api/public/health 2>/dev/null; do
+          sleep 3;
+        done;
+        echo 'Langfuse ready. Patching project membership...';
+        psql -h postgres -U langfuse -d langfuse -c \"
+          INSERT INTO project_memberships
+            (project_id, user_id, role, created_at, updated_at, org_membership_id)
+          SELECT
+            'local-project',
+            u.id,
+            'OWNER',
+            NOW(),
+            NOW(),
+            om.id
+          FROM users u
+          JOIN organization_memberships om
+            ON om.user_id = u.id AND om.org_id = 'local-org'
+          WHERE u.email = 'admin@example.com'
+          ON CONFLICT DO NOTHING;
+        \";
+        echo 'Setup complete.'
+      "
+    restart: "no"
 
 volumes:
   langfuse_postgres_data:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class SpanRecord(BaseModel):
@@ -10,6 +10,13 @@ class SpanRecord(BaseModel):
 
     Evolution policy: only add Optional fields with defaults. Never delete or retype.
     See docs/schema_versioning.md.
+
+    Cost fields (three valid patterns):
+      1. Omit all cost fields → Langfuse auto-computes from its Model Pricing table.
+      2. Set input_cost_usd + output_cost_usd → cost_usd is auto-summed; Langfuse
+         receives split cost (input_cost / output_cost) for detailed reporting.
+      3. Set cost_usd only (legacy) → Langfuse receives total_cost only.
+         Prefer set_cost_breakdown() over set_cost() for new code.
     """
 
     trace_id: str
@@ -20,9 +27,44 @@ class SpanRecord(BaseModel):
     prompt_tokens: int
     completion_tokens: int
     latency_ms: int
-    cost_usd: float
+
+    # Legacy total-cost field. Kept for backward compatibility.
+    # Omit (default 0.0) to let Langfuse auto-compute from its model pricing table.
+    cost_usd: float = 0.0
+
+    # Breakdown fields (preferred over cost_usd for new code).
+    input_cost_usd: float | None = None
+    output_cost_usd: float | None = None
+
     tags: dict[str, str] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _reconcile_costs(self) -> SpanRecord:
+        """Keep cost_usd, input_cost_usd, output_cost_usd consistent.
+
+        Rules:
+        - If breakdown provided but cost_usd is 0.0 (default) → auto-sum.
+        - If all three provided → breakdown sum must equal cost_usd (±1e-9 float tolerance).
+        """
+        has_breakdown = self.input_cost_usd is not None or self.output_cost_usd is not None
+        if not has_breakdown:
+            return self
+
+        input_c = self.input_cost_usd or 0.0
+        output_c = self.output_cost_usd or 0.0
+        breakdown_sum = input_c + output_c
+
+        if self.cost_usd == 0.0:
+            # Auto-sum from breakdown
+            self.cost_usd = breakdown_sum
+        elif abs(self.cost_usd - breakdown_sum) > 1e-9:
+            raise ValueError(
+                f"cost_usd ({self.cost_usd}) must equal "
+                f"input_cost_usd ({self.input_cost_usd}) + output_cost_usd ({self.output_cost_usd}) "
+                f"= {breakdown_sum}"
+            )
+        return self
 
     @property
     def total_tokens(self) -> int:

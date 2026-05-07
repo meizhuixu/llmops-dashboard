@@ -115,19 +115,21 @@ llmops-dashboard/
 
 Defined in `src/llmops_dashboard/instrumentation/schema.py`.
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| trace_id | str | yes | UUID for the root trace |
-| span_id | str | yes | UUID for this span |
-| project | str | yes | Business project name (e.g. "auto-sentinel") |
-| component | str | yes | Sub-component (e.g. "diagnosis-agent") |
-| model | str | yes | Model identifier (e.g. "claude-opus-4-7") |
-| prompt_tokens | int | yes | Input token count |
-| completion_tokens | int | yes | Output token count |
-| latency_ms | int | yes | Wall-clock latency in milliseconds |
-| cost_usd | float | yes | Estimated cost in USD |
-| tags | dict[str, str] | no | Arbitrary string tags for filtering |
-| metadata | dict[str, Any] | no | Arbitrary metadata (JSON-serializable) |
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| trace_id | str | auto | 32-char hex (OTel-compatible) |
+| span_id | str | auto | 16-char hex |
+| project | str | required | Business project name (e.g. "auto-sentinel") |
+| component | str | required | Sub-component (e.g. "diagnosis-agent") |
+| model | str | required | Model identifier (e.g. "claude-opus-4-7") |
+| prompt_tokens | int | required | Input token count |
+| completion_tokens | int | required | Output token count |
+| latency_ms | int | auto | Wall-clock latency in milliseconds |
+| cost_usd | float | `0.0` | Total cost in USD (auto-summed if breakdown provided) |
+| input_cost_usd | float \| None | `None` | Input cost — use set_cost_breakdown() |
+| output_cost_usd | float \| None | `None` | Output cost — use set_cost_breakdown() |
+| tags | dict[str, str] | `{}` | Arbitrary string tags for filtering |
+| metadata | dict[str, Any] | `{}` | Arbitrary metadata (JSON-serializable) |
 
 ### Schema Evolution Policy
 
@@ -138,6 +140,8 @@ Defined in `src/llmops_dashboard/instrumentation/schema.py`.
 ---
 
 ## LLMTracer Usage Pattern
+
+### Recommended: let Langfuse auto-compute cost
 
 ```python
 from llmops_dashboard.instrumentation import LLMTracer
@@ -153,8 +157,26 @@ with LLMTracer(
         prompt=response.usage.input_tokens,
         completion=response.usage.output_tokens,
     )
-    t.set_cost(0.015)
+    # No cost call → Langfuse auto-computes from Settings → Models pricing table
 # On __exit__: latency_ms computed automatically, SpanRecord sent to Langfuse
+```
+
+### With split cost reporting
+
+```python
+with LLMTracer(project=..., component=..., model="claude-opus-4-7") as t:
+    response = anthropic_client.messages.create(...)
+    t.set_tokens(prompt=response.usage.input_tokens, completion=response.usage.output_tokens)
+    t.set_cost_breakdown(
+        input_usd=response.usage.input_tokens * 15.0 / 1_000_000,
+        output_usd=response.usage.output_tokens * 75.0 / 1_000_000,
+    )
+```
+
+### Deprecated: set_cost(total)
+
+```python
+t.set_cost(0.015)  # DeprecationWarning — use set_cost_breakdown or omit
 ```
 
 ---
@@ -295,6 +317,16 @@ No deploy step in Phase 1. Phase 2+ adds integration tests against local Langfus
 ### Docker compose port conflict
 - Langfuse default port is 3000. If occupied, change `ports` in docker-compose.langfuse.yml
 - Postgres is on 5432 (internal only)
+
+---
+
+## Known Technical Debt
+
+| # | Debt | Status | Fixed in |
+|---|------|--------|----------|
+| 1 | `cost_usd` passed in `metadata` instead of `ModelUsage.total_cost` → Langfuse showed $0.00 | ✅ Fixed | `fix(instrumentation): correct Langfuse v2 cost reporting` |
+| 2 | `LLMTracer` does not support streaming responses — tokens must be set after stream completes | 🔜 Phase 2 | Wire DevDocs RAG streaming calls |
+| 3 | No retry / backoff when `langfuse.flush()` fails (network error silently drops the trace) | 📋 Phase 3 | Alerting phase infra work |
 
 ---
 
