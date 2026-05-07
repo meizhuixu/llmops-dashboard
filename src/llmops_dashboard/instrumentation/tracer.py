@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import time
 import warnings
 from types import TracebackType
@@ -11,6 +12,8 @@ from llmops_dashboard.instrumentation.client import LangfuseClient
 from llmops_dashboard.instrumentation.schema import SpanRecord
 
 logger = logging.getLogger(__name__)
+
+_TRACE_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 
 
 class LLMTracer:
@@ -45,6 +48,7 @@ class LLMTracer:
         model: str,
         tags: dict[str, str] | None = None,
         metadata: dict[str, Any] | None = None,
+        trace_id: str | None = None,
         client: LangfuseClient | None = None,
     ) -> None:
         self.project = project
@@ -54,8 +58,20 @@ class LLMTracer:
         self.metadata = dict(metadata or {})
         self._client = client or LangfuseClient()
 
-        # OTel-compatible 32-char hex trace IDs required by Langfuse v2 SDK
-        self._trace_id = os.urandom(16).hex()
+        # OTel-compatible 32-char hex trace IDs required by Langfuse v2 SDK.
+        # When trace_id is supplied, this tracer attaches its span to an existing
+        # trace owned by the caller (e.g. a multi-agent graph entry point) and
+        # must not emit trace-level metadata that would overwrite the parent.
+        if trace_id is not None:
+            if not _TRACE_ID_RE.fullmatch(trace_id):
+                raise ValueError(
+                    f"trace_id must be 32 lowercase hex chars (OTel-compatible); got {trace_id!r}"
+                )
+            self._trace_id = trace_id
+            self._owns_trace = False
+        else:
+            self._trace_id = os.urandom(16).hex()
+            self._owns_trace = True
         self._span_id = os.urandom(8).hex()
         self._start_ns: int = 0
         self._prompt_tokens: int = 0
@@ -147,4 +163,4 @@ class LLMTracer:
             record.total_tokens,
             self._cost_usd,
         )
-        self._client.send(record)
+        self._client.send(record, owns_trace=self._owns_trace)
