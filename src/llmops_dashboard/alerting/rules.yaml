@@ -1,0 +1,36 @@
+# Alert rules — declarative thresholds for LLM trace metrics.
+# Each rule must have a corresponding test in tests/test_alerting_rules.py.
+# Triggering logic (polling Langfuse and firing notifications) is Phase 3.
+
+- name: high_latency
+  metric: latency_ms
+  operator: ">"
+  threshold: 5000
+  window_minutes: 5
+  notifier: slack
+  severity: warning
+
+- name: cost_spike
+  metric: cost_usd
+  operator: ">"
+  threshold: 0.10
+  window_minutes: 1
+  notifier: slack
+  severity: critical
+
+- name: zero_tokens
+  metric: prompt_tokens
+  operator: "=="
+  threshold: 0
+  window_minutes: 1
+  notifier: log
+  severity: warning
+
+- name: auto_sentinel_high_latency
+  metric: latency_ms
+  operator: ">="
+  threshold: 8000
+  window_minutes: 10
+  notifier: slack
+  severity: critical
+  project_filter: auto-sentinel

@@ -1,0 +1,62 @@
+# Langfuse v2 — only requires Postgres (no ClickHouse).
+# v3 requires ClickHouse; stick with v2 for local dev simplicity.
+#
+# Seeds a default project + API key pair on first start:
+#   Public key:  pk-lf-local-dev-public-key
+#   Secret key:  sk-lf-local-dev-secret-key
+# Copy these to your .env after running `docker compose up -d`.
+services:
+  langfuse:
+    image: langfuse/langfuse:2
+    container_name: langfuse
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://langfuse:langfuse@postgres:5432/langfuse
+      NEXTAUTH_SECRET: local-dev-secret-change-in-prod
+      SALT: local-dev-salt-change-in-prod
+      NEXTAUTH_URL: http://localhost:3000
+      TELEMETRY_ENABLED: "false"
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
+      # Seed a default org / project / API key on first boot
+      LANGFUSE_INIT_ORG_ID: "local-org"
+      LANGFUSE_INIT_ORG_NAME: "Local Dev Org"
+      LANGFUSE_INIT_PROJECT_ID: "local-project"
+      LANGFUSE_INIT_PROJECT_NAME: "LLMOps Dashboard"
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: "pk-lf-local-dev-public-key"
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: "sk-lf-local-dev-secret-key"
+      LANGFUSE_INIT_USER_EMAIL: "admin@example.com"
+      LANGFUSE_INIT_USER_NAME: "Admin"
+      LANGFUSE_INIT_USER_PASSWORD: "password123"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/public/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: langfuse-postgres
+    environment:
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: langfuse
+      POSTGRES_DB: langfuse
+    volumes:
+      - langfuse_postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  langfuse_postgres_data:
+    driver: local
