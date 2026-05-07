@@ -65,8 +65,7 @@ class LLMTracer:
         if trace_id is not None:
             if not _TRACE_ID_RE.fullmatch(trace_id):
                 raise ValueError(
-                    "trace_id must be 32 lowercase hex chars (OTel-compatible); "
-                    f"got {trace_id!r}"
+                    f"trace_id must be 32 lowercase hex chars (OTel-compatible); got {trace_id!r}"
                 )
             self._trace_id = trace_id
             self._owns_trace = False
