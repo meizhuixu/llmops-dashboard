@@ -3,7 +3,7 @@
 This script sends 3 traces to Langfuse, each demonstrating a different cost API:
 
   Trace 1 (auto-sentinel):
-    set_cost_breakdown(input_usd, output_usd) — RECOMMENDED
+    set_cost_breakdown(input_cost, output_cost, currency=...) — RECOMMENDED
     Langfuse UI shows split input_cost + output_cost columns.
 
   Trace 2 (devdocs-rag):
@@ -86,8 +86,9 @@ def simulate_auto_sentinel() -> None:
         usage = fake_llm_call("high")
         t.set_tokens(prompt=usage["input_tokens"], completion=usage["output_tokens"])
         t.set_cost_breakdown(
-            input_usd=_input_cost(model, usage["input_tokens"]),
-            output_usd=_output_cost(model, usage["output_tokens"]),
+            input_cost=_input_cost(model, usage["input_tokens"]),
+            output_cost=_output_cost(model, usage["output_tokens"]),
+            currency="USD",
         )
 
     logger.info("auto-sentinel trace sent: trace_id=%s", t.trace_id)

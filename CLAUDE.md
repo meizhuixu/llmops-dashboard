@@ -168,8 +168,9 @@ with LLMTracer(project=..., component=..., model="claude-opus-4-7") as t:
     response = anthropic_client.messages.create(...)
     t.set_tokens(prompt=response.usage.input_tokens, completion=response.usage.output_tokens)
     t.set_cost_breakdown(
-        input_usd=response.usage.input_tokens * 15.0 / 1_000_000,
-        output_usd=response.usage.output_tokens * 75.0 / 1_000_000,
+        input_cost=response.usage.input_tokens * 15.0 / 1_000_000,
+        output_cost=response.usage.output_tokens * 75.0 / 1_000_000,
+        currency="USD",  # default is "CNY" (Ark/GLM billing); set explicitly per provider
     )
 ```
 

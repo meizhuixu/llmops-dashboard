@@ -52,7 +52,11 @@ class LangfuseClient:
                     name=record.component,
                     model=record.model,
                     usage=_build_usage(record),
-                    metadata={"latency_ms": record.latency_ms, **record.metadata},
+                    metadata={
+                        "latency_ms": record.latency_ms,
+                        "cost_currency": record.cost_currency,
+                        **record.metadata,
+                    },
                 )
             else:
                 self._langfuse.generation(
@@ -61,7 +65,11 @@ class LangfuseClient:
                     name=record.component,
                     model=record.model,
                     usage=_build_usage(record),
-                    metadata={"latency_ms": record.latency_ms, **record.metadata},
+                    metadata={
+                        "latency_ms": record.latency_ms,
+                        "cost_currency": record.cost_currency,
+                        **record.metadata,
+                    },
                 )
             self._langfuse.flush()
             logger.debug("SpanRecord sent to Langfuse: trace_id=%s", record.trace_id)
