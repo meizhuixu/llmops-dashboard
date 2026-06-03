@@ -33,8 +33,16 @@ class SpanRecord(BaseModel):
     cost_usd: float = 0.0
 
     # Breakdown fields (preferred over cost_usd for new code).
+    # NOTE: despite the _usd suffix (kept for schema back-compat — renames are
+    # forbidden), these hold values in `cost_currency`, which may not be USD.
     input_cost_usd: float | None = None
     output_cost_usd: float | None = None
+
+    # Currency of the cost_* fields. Langfuse v2 ModelUsage has no currency slot,
+    # so this is surfaced via generation metadata, not the cost columns. Defaults
+    # to USD: the auto-compute and legacy set_cost() paths price in USD (Langfuse
+    # Models table is USD). set_cost_breakdown() overrides it per call.
+    cost_currency: str = "USD"
 
     tags: dict[str, str] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)

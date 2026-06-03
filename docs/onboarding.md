@@ -131,17 +131,23 @@ with LLMTracer(project="my-project", component="my-agent", model="claude-sonnet-
 
 **Prerequisite**: configure the model in Langfuse UI. See "First-time Model Pricing Setup" below.
 
-### Option B — set_cost_breakdown(input_usd, output_usd)
+### Option B — set_cost_breakdown(input_cost, output_cost, currency=...)
 
 Pass your own pricing. Langfuse shows separate **input cost** and **output cost** columns.
+
+`currency` (default `"CNY"`) labels the figures. Langfuse v2 has no currency field on
+cost, so it is recorded in generation metadata only — the numbers are sent as-is.
+The Langfuse Models pricing table is configured in **USD**, so **do not mix currencies
+within one Langfuse project** if you rely on aggregate cost totals.
 
 ```python
 with LLMTracer(...) as t:
     response = client.messages.create(...)
     t.set_tokens(prompt=response.usage.input_tokens, completion=response.usage.output_tokens)
     t.set_cost_breakdown(
-        input_usd=response.usage.input_tokens * 15.0 / 1_000_000,   # $15/M for opus
-        output_usd=response.usage.output_tokens * 75.0 / 1_000_000, # $75/M for opus
+        input_cost=response.usage.input_tokens * 15.0 / 1_000_000,   # $15/M for opus
+        output_cost=response.usage.output_tokens * 75.0 / 1_000_000, # $75/M for opus
+        currency="USD",
     )
 ```
 

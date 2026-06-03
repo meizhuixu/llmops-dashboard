@@ -24,8 +24,10 @@ class LLMTracer:
     1. (Recommended) Omit all cost calls — Langfuse auto-computes from its Model Pricing table.
        Requires the model name to be configured in Langfuse Settings → Models.
 
-    2. Call set_cost_breakdown(input_usd, output_usd) for split cost tracking.
-       Langfuse UI shows separate input / output cost columns.
+    2. Call set_cost_breakdown(input_cost, output_cost, currency=...) for split
+       cost tracking. Langfuse UI shows separate input / output cost columns.
+       currency is recorded in generation metadata (Langfuse v2 has no currency
+       slot on cost), and defaults to CNY for the Ark/GLM billing path.
 
     3. (Deprecated) Call set_cost(total_usd) for backward compatibility.
        Langfuse receives total_cost only; no input/output split visible in UI.
@@ -37,7 +39,7 @@ class LLMTracer:
             response = client.messages.create(...)
             t.set_tokens(prompt=response.usage.input_tokens,
                          completion=response.usage.output_tokens)
-            t.set_cost_breakdown(input_usd=0.003, output_usd=0.012)
+            t.set_cost_breakdown(input_cost=0.003, output_cost=0.012, currency="USD")
         # On __exit__: latency computed automatically and SpanRecord sent to Langfuse
     """
 
@@ -79,6 +81,9 @@ class LLMTracer:
         self._cost_usd: float = 0.0
         self._input_cost_usd: float | None = None
         self._output_cost_usd: float | None = None
+        # Defaults to USD: auto-compute (Langfuse Models table) and legacy
+        # set_cost() both price in USD. set_cost_breakdown() overrides this.
+        self._cost_currency: str = "USD"
 
     def set_tokens(self, *, prompt: int, completion: int) -> None:
         self._prompt_tokens = prompt
@@ -92,22 +97,31 @@ class LLMTracer:
         """
         warnings.warn(
             "set_cost(total_usd) is deprecated. "
-            "Use set_cost_breakdown(input_usd, output_usd) for split cost reporting in Langfuse UI, "
+            "Use set_cost_breakdown(input_cost, output_cost, currency=...) for split cost reporting in Langfuse UI, "
             "or omit cost entirely to let Langfuse auto-compute from its model pricing table.",
             DeprecationWarning,
             stacklevel=2,
         )
         self._cost_usd = cost_usd
 
-    def set_cost_breakdown(self, *, input_usd: float, output_usd: float) -> None:
+    def set_cost_breakdown(
+        self, *, input_cost: float, output_cost: float, currency: str = "CNY"
+    ) -> None:
         """Set input and output cost separately for detailed Langfuse cost reporting.
 
         Langfuse UI will show separate input_cost and output_cost columns.
-        cost_usd is auto-computed as input_usd + output_usd.
+        Total cost is auto-computed as input_cost + output_cost.
+
+        currency labels the figures (e.g. "CNY" for Ark/GLM billing, "USD" for
+        Anthropic). Langfuse v2 ModelUsage has no currency field, so it is carried
+        in generation metadata rather than the cost columns — the numbers are sent
+        as-is, so do not mix currencies within a single Langfuse project if you
+        rely on aggregate cost totals.
         """
-        self._input_cost_usd = input_usd
-        self._output_cost_usd = output_usd
-        self._cost_usd = input_usd + output_usd
+        self._input_cost_usd = input_cost
+        self._output_cost_usd = output_cost
+        self._cost_usd = input_cost + output_cost
+        self._cost_currency = currency
 
     @property
     def trace_id(self) -> str:
@@ -149,6 +163,7 @@ class LLMTracer:
             cost_usd=self._cost_usd,
             input_cost_usd=self._input_cost_usd,
             output_cost_usd=self._output_cost_usd,
+            cost_currency=self._cost_currency,
             tags=self.tags,
             metadata={
                 **self.metadata,
