@@ -174,6 +174,29 @@ with LLMTracer(project=..., component=..., model="claude-opus-4-7") as t:
     )
 ```
 
+### Non-USD project currency registry
+
+Langfuse v2.95's UI **hardcodes a `$` symbol for every project's cost**, and its
+default cost semantics are USD. So a USD-billed project's `$` display is already
+correct and needs no entry here. Only **non-USD** projects have a skew — the UI
+shows `$` but the figure is not actually dollars — and those must be registered
+below to correct for it. This is an **exceptions list, not a full roster**.
+
+- Any project **not** in this table: read its Langfuse UI cost as the displayed **USD**.
+- Any project **in** this table: the `$` shown in its Langfuse UI must be re-read as
+  the **Actual Currency** column below (the number is correct; only the symbol is wrong).
+- Onboarding a new non-USD project: **add a row here** as part of wiring it up.
+
+| Langfuse project | Actual Currency | Billing source (basis) |
+|------------------|-----------------|------------------------|
+| auto-sentinel    | CNY             | Ark / GLM (Volcano Ark, billed in ¥) |
+
+This registry is part of the **mitigation** for the currency-misnomer debt in
+`DEBT.md` (Instrumentation / Schema Debt → *`SpanRecord.input_cost_usd` /
+`output_cost_usd` are a currency misnomer*), **not a resolution**: Langfuse v2.95
+cannot render non-USD currencies (the `$` is fixed at the platform level), so this
+table is how readers reinterpret the display until that debt is actually closed.
+
 ### Deprecated: set_cost(total)
 
 ```python
