@@ -11,9 +11,11 @@
 - ✅ Phase 1 完成 + 增量演进已合并：PR #1 trace_id 外部注入（PR-0）、PR #2
   `set_cost_breakdown` currency 对齐 auto-sentinel、PR #3 DEBT.md、PR #4 currency-display
   findings、PR #5 非 USD project currency registry。main 与远端同步（2026-07-03 本地已 sync）。
-- ⏳ **Phase 2 进行中/即将启动**：接 auto-sentinel 真实 LLM 调用。sentinel 侧的 T068
-  real-trace 冒烟脚本已在 `feat/langfuse-real-trace-script` 分支（该仓库）待合并——这是
-  Phase 2 对接的第一步。验证目标：project/component tag 分组、cost 非 0（CNY）、单父 trace 树。
+- ✅ **Phase 2 · auto-sentinel 侧接入实测通过（2026-07-03）**：T068 单 span 冒烟 + 一条真实
+  incident 全链路 trace 均落入本地 Langfuse v2.95——单父 trace（`auto-sentinel/pipeline`）下
+  4 个 generation，`project:auto-sentinel` + `component:pipeline` tag 过滤正常，cost 经
+  ModelUsage 计入非 0（CNY，`cost_currency` metadata 承载），trace_id 外部注入贯通。
+  Phase 2 剩余：devdocs-rag Phase 6 的 SSE streaming 接入（token 计数验证，见 DEBT.md）。
 - 开放技术债见 `DEBT.md`（Postgres 凭据硬编码→Phase 4、langfuse-setup shim→v3 迁移时删、
   `_usd` 字段 misnomer→Phase 2 锚点、streaming token counts 未验证→接 devdocs-rag 时）。
 
