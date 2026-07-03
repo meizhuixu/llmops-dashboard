@@ -208,6 +208,41 @@ All traces follow `SpanRecord` (defined in `src/llmops_dashboard/instrumentation
 
 > **If validation fails**: ensure `t.set_tokens()` is called inside the `with` block.
 
+## Streaming Calls (verified pattern)
+
+For SSE/streaming LLM calls, `completion_tokens` is only known once the stream
+closes. The supported pattern — verified against a real Volcano Ark streaming
+call from devdocs-rag (2026-07-03) — is: consume the stream fully inside the
+`with` block, then call `set_tokens()` / `set_cost_breakdown()` **after the
+last chunk but before the block exits** (the span ships on `__exit__`):
+
+```python
+with LLMTracer(project=..., component=..., model=...) as t:
+    stream = await client.chat.completions.create(
+        ..., stream=True, stream_options={"include_usage": True}
+    )
+    async for chunk in stream:
+        ...  # yield/collect content deltas; the final chunk carries .usage
+    t.set_tokens(prompt=usage.prompt_tokens, completion=usage.completion_tokens)
+    t.set_cost_breakdown(input_cost=..., output_cost=..., currency="CNY")
+```
+
+Notes:
+- OpenAI-compatible gateways only send the usage chunk when
+  `stream_options={"include_usage": True}` is set.
+- Reasoning-capable models (e.g. doubao-seed-2.0) count hidden reasoning
+  tokens in `completion_tokens`, so the count can exceed the visible output.
+
+## Trace Ownership (trace_id gotcha)
+
+Pass `trace_id` to `LLMTracer` **only when something else creates the parent
+trace** (the multi-agent pattern — e.g. auto-sentinel's `open_parent_trace()`
+at the pipeline entry). With an injected `trace_id` the tracer runs in
+`owns_trace=False` mode and emits *only* a generation; if no parent trace
+exists, ingestion still accepts it (HTTP 201) but the span is an **orphan** —
+invisible in trace queries and the UI. For standalone single-call clients,
+omit `trace_id` and let the tracer self-generate and own the trace.
+
 ## Versioning Policy
 
 See [schema_versioning.md](schema_versioning.md) for the full schema evolution policy.
