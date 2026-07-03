@@ -354,6 +354,19 @@ No deploy step in Phase 1. Phase 2+ adds integration tests against local Langfus
 
 ---
 
+## Docs Maintenance (PROJECT.md / DEBT.md)
+
+- `docs/PROJECT.md` is the project-context doc + status snapshot. Whenever a
+  code change lands as a PR, update its "当前状态（快照）" section in the same
+  PR (current phase, key outcomes).
+- `DEBT.md` is the live technical debt register (the table above is the
+  historical Phase 1 snapshot): add an entry inline when new debt surfaces;
+  flip `[ ]` → `[X]` in the same commit that lands the fix (keep the entry).
+- Authoritative progress stays in `git log` + `DEBT.md` + the Phase Roadmap —
+  PROJECT.md is a snapshot / entry point, not the source of truth.
+
+---
+
 ## Contact / Ownership
 
 Project: AI Native Portfolio — LLMOps Dashboard
