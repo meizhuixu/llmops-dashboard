@@ -71,10 +71,10 @@ avoids coupling.
 
 | Phase | Status | Description |
 |-------|--------|-------------|
-| 1 | ✅ Current | Skeleton + LLMTracer library + docker compose + dummy demo + CI |
-| 2 | 🔜 Next | Wire real LLM calls in auto-sentinel / devdocs-rag / devcontext-mcp |
-| 3 | 📋 Planned | Alerting rules + multi-model eval + A/B prompt routing |
-| 4 | 🔮 Optional | Terraform AWS deployment (stub only until then) |
+| 1 | ✅ Done | Skeleton + LLMTracer library + docker compose + dummy demo + CI |
+| 2 | ✅ auto-sentinel + devdocs-rag verified (2026-07-03); devcontext-mcp in flight | Wire real LLM calls in the business projects |
+| 3 | 🔄 Alerting engine live (2026-07-03); eval + A/B remain optional | Alerting rules + multi-model eval + A/B prompt routing |
+| 4 | ❌ Cut (2026-07-03 decision) | Terraform AWS deployment — dropped; `infra/terraform/` stays a stub |
 
 ---
 
@@ -269,7 +269,15 @@ Rules live in `alerting/rules.yaml`. Schema is `AlertRule` (Pydantic V2).
   severity: warning
 ```
 
-Rules are parsed at startup by `alerting/rules.py`. The actual triggering logic is Phase 3.
+Rules are parsed by `alerting/rules.py`. Triggering logic lives in
+`alerting/engine.py` (Phase 3, live): a windowed fetch from the Langfuse
+public API (observations joined with trace tags) feeds per-span rule
+evaluation; violations dispatch to the rule's notifier (Slack webhook when
+`SLACK_WEBHOOK_URL` is set, log fallback otherwise). One-shot pass:
+
+```bash
+uv run python -m llmops_dashboard.alerting
+```
 
 Every rule in rules.yaml **must** have a corresponding test in `tests/test_alerting_rules.py`.
 
@@ -349,8 +357,10 @@ No deploy step in Phase 1. Phase 2+ adds integration tests against local Langfus
 | # | Debt | Status | Fixed in |
 |---|------|--------|----------|
 | 1 | `cost_usd` passed in `metadata` instead of `ModelUsage.total_cost` → Langfuse showed $0.00 | ✅ Fixed | `fix(instrumentation): correct Langfuse v2 cost reporting` |
-| 2 | `LLMTracer` does not support streaming responses — tokens must be set after stream completes | 🔜 Phase 2 | Wire DevDocs RAG streaming calls |
-| 3 | No retry / backoff when `langfuse.flush()` fails (network error silently drops the trace) | 📋 Phase 3 | Alerting phase infra work |
+| 2 | `LLMTracer` does not support streaming responses — tokens must be set after stream completes | ✅ Verified 2026-07-03 | devdocs-rag Phase 6 real run; pattern in `docs/onboarding.md` |
+| 3 | No retry / backoff when `langfuse.flush()` fails (network error silently drops the trace) | ✅ Resolved-as-investigated 2026-07-03 | Premise was wrong: the langfuse v2 SDK's ingestion consumer already retries uploads with exponential backoff (`backoff.expo`, `max_retries`). Residual gap — batches drop after retries exhaust (backend down for minutes) — would need a local spool; deliberately out of scope. |
+
+The live register is `DEBT.md`; this table is the Phase 1 historical snapshot.
 
 ---
 
