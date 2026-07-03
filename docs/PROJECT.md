@@ -11,11 +11,18 @@
 - ✅ Phase 1 完成 + 增量演进已合并：PR #1 trace_id 外部注入（PR-0）、PR #2
   `set_cost_breakdown` currency 对齐 auto-sentinel、PR #3 DEBT.md、PR #4 currency-display
   findings、PR #5 非 USD project currency registry。main 与远端同步（2026-07-03 本地已 sync）。
-- ✅ **Phase 2 · auto-sentinel 侧接入实测通过（2026-07-03）**：T068 单 span 冒烟 + 一条真实
-  incident 全链路 trace 均落入本地 Langfuse v2.95——单父 trace（`auto-sentinel/pipeline`）下
-  4 个 generation，`project:auto-sentinel` + `component:pipeline` tag 过滤正常，cost 经
-  ModelUsage 计入非 0（CNY，`cost_currency` metadata 承载），trace_id 外部注入贯通。
-  Phase 2 剩余：devdocs-rag Phase 6 的 SSE streaming 接入（token 计数验证，见 DEBT.md）。
+- ✅ **Phase 2 · auto-sentinel + devdocs-rag 双双实测通过（2026-07-03）**：auto-sentinel
+  真实 incident 单父 4-generation trace 树 + devdocs-rag SSE 流式 trace（tokens 621+383、
+  cost ¥0.0081 精确对账）均落库；streaming token 债清掉，trace-ownership 坑（注入 trace_id
+  无父 trace = 孤儿 generation）写进 onboarding。剩余：devcontext-mcp（另一会话推进中）。
+- ✅ **Phase 3 · Alerting engine 上线（2026-07-03）**：`alerting/engine.py` 补齐触发逻辑——
+  Langfuse public API 窗口拉取（observations + trace tags 两次列表调用内存 join）→ 逐 span
+  规则评估（project_filter / 窗口过滤）→ notifier 派发（Slack webhook 实现，未配置回落 log）。
+  `python -m llmops_dashboard.alerting` 一把跑。真实数据验证：6h 窗口回放里 `zero_tokens`
+  规则精确命中当天那条客户端断连的 0-token span，零误报。flush-retry 债查实为伪命题
+  （SDK 内建指数退避），已按实情销账。Phase 3 剩余（可选）：multi-model eval、A/B routing。
+- ❌ **Phase 4 已砍**（2026-07-03 决策）：Terraform/AWS 不做，`infra/terraform/` 维持 stub，
+  DEBT 里 Postgres 凭据条目长期 parked。
 - 开放技术债见 `DEBT.md`（Postgres 凭据硬编码→Phase 4、langfuse-setup shim→v3 迁移时删、
   `_usd` 字段 misnomer→Phase 2 锚点、streaming token counts 未验证→接 devdocs-rag 时）。
 
